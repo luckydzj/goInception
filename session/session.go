@@ -96,6 +96,7 @@ type Session interface {
 
 	// 用以测试
 	GetAlterTablePostPart(sql string, isPtOSC bool) string
+	InitDisableTypes()
 
 	LoadOptions(opt SourceOptions) error
 	Audit(ctx context.Context, sql string) ([]Record, error)
@@ -134,7 +135,19 @@ func (h *StmtHistory) Count() int {
 	return len(h.history)
 }
 
+// jwx added
+type alterTableInfo struct {
+	Name              string
+	alterStmtList     []ast.AlterTableStmt
+	mergedSql         string
+	recordSetsPosList []int //  记录当前语句在s.recordSets里的位置，用于修改needMerge字段
+}
+
 type session struct {
+
+	//jwx added
+	alterTableInfoList []alterTableInfo
+
 	// processInfo is used by ShowProcess(), and should be modified atomically.
 	processInfo atomic.Value
 	txn         TxnState
@@ -180,7 +193,7 @@ type session struct {
 	// 备份库
 	backupDBCacheList map[string]bool
 	// 备份库中的备份表
-	backupTableCacheList map[string]bool
+	backupTableCacheList map[string]BackupTable
 
 	inc   config.Inc
 	osc   config.Osc
@@ -263,6 +276,9 @@ type session struct {
 
 	// masking 语法树解析功能
 	maskingFields []MaskingFieldInfo
+
+	// 统一处理禁用的数据类型
+	disableTypes map[string]uint8
 }
 
 func (s *session) getMembufCap() int {
@@ -1584,8 +1600,9 @@ func (s *session) ShowProcess() util.ProcessInfo {
 func logStmt(node ast.StmtNode, vars *variable.SessionVars) {
 	switch stmt := node.(type) {
 	case *ast.CreateUserStmt, *ast.DropUserStmt, *ast.AlterUserStmt, *ast.SetPwdStmt, *ast.GrantStmt,
-		*ast.RevokeStmt, *ast.AlterTableStmt, *ast.CreateDatabaseStmt, *ast.CreateIndexStmt, *ast.CreateTableStmt,
-		*ast.DropDatabaseStmt, *ast.DropIndexStmt, *ast.DropTableStmt, *ast.RenameTableStmt, *ast.TruncateTableStmt:
+		*ast.RevokeStmt, *ast.AlterTableStmt, *ast.AlterTableGroupStmt, *ast.CreateDatabaseStmt, *ast.CreateIndexStmt,
+		*ast.CreateTableStmt, *ast.CreateTableGroupStmt, *ast.DropDatabaseStmt, *ast.DropIndexStmt, *ast.DropTableStmt,
+		*ast.DropTableGroupStmt, *ast.RenameTableStmt, *ast.TruncateTableStmt:
 		user := vars.User
 		schemaVersion := vars.TxnCtx.SchemaVersion
 		if ss, ok := node.(ast.SensitiveStmtNode); ok {

@@ -1,7 +1,7 @@
 # gh-ost
 
-- 内置gh-ost源码(`v1.0.48`)，因此无须下载。
-- 手动终止和暂停及恢复功能已开放相应命令，因此隐藏相关参数。
+- 内置gh-ost源码(`v1.0.48`)，因此无须下载。手动终止和暂停及恢复功能已开放相应命令，因此隐藏相关参数。
+- 支持binary方式调用gh-ost, 参数开关为`ghost_bin_dir`, 使用方式请参考pt-osc的`osc_bin_dir`参数,在未指定该参数时仍以内置源码方式调用.
 
 ####参数设置
 
@@ -92,6 +92,7 @@ osc_print_none                         | false          | bool | 用来设置在
 参数  |  默认值  |  可选范围 | 说明
 ------------ | ------------- | ------------ | ------------
 ghost_on                               | false  | bool | gh-ost开关
+ghost_bin_dir `v1.2.5`                 | '' | string | gh-ost binary的位置
 ghost_aliyun_rds                       | false  | bool | 阿里云rds数据库标志
 ghost_allow_master_master              | false  | bool | 允许gh-ost运行在双主复制架构中，一般与-assume-master-host参数一起使用
 ghost_allow_nullable_unique_key        | false  | bool | 允许gh-ost在数据迁移(migrate)依赖的唯一键可以为NULL，默认为不允许为NULL的唯一键。如果数据迁移(migrate)依赖的唯一键允许NULL值，则可能造成数据不正确，请谨慎使用。

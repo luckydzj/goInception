@@ -101,7 +101,8 @@ type testCommon struct {
 
 	session session.Session
 
-	defaultInc config.Inc
+	defaultInc      config.Inc
+	defaultIncLevel config.IncLevel
 
 	// 测试数据库,默认为test_inc,该参数用以测试未指定数据库情况下的审核
 	useDB string
@@ -183,10 +184,16 @@ func (s *testCommon) initSetUp(c *C) {
 	inc.SqlSafeUpdates = 0
 	inc.EnableDropTable = true
 
+	incLevel := &config.GetGlobalConfig().IncLevel
+	incLevel.ErUseEnum = 1
+	incLevel.ErJsonTypeSupport = 1
+	incLevel.ErUseTextOrBlob = 1
+
 	// mysql5.6测试用例会出错(docker映射对外的端口不一致)
 	config.GetGlobalConfig().Ghost.GhostAliyunRds = true
 
 	s.defaultInc = *inc
+	s.defaultIncLevel = *incLevel
 
 	s.remoteBackupTable = "$_$Inception_backup_information$_$"
 	s.parser = parser.New()
@@ -242,7 +249,6 @@ func (s *testCommon) tearDownTest(c *C) {
 	}()
 
 	config.GetGlobalConfig().Inc.EnableDropTable = true
-	session.TestCheckAuditSetting(config.GetGlobalConfig())
 
 	s.runCheck("show tables")
 	c.Assert(int(s.getAffectedRows()), GreaterEqual, 1)
@@ -285,7 +291,6 @@ func (s *testCommon) tearDownTest(c *C) {
 }
 
 func (s *testCommon) runCheck(sql string) {
-	session.TestCheckAuditSetting(config.GetGlobalConfig())
 
 	if s.isAPI {
 		s.sessionService.LoadOptions(session.SourceOptions{
@@ -381,7 +386,6 @@ inception_magic_commit;`
 
 func (s *testCommon) mustRunExec(c *C, sql string) *testkit.Result {
 	config.GetGlobalConfig().Inc.EnableDropTable = true
-	session.TestCheckAuditSetting(config.GetGlobalConfig())
 
 	if s.isAPI {
 		s.sessionService.LoadOptions(session.SourceOptions{
@@ -510,7 +514,7 @@ inception_magic_commit;`
 }
 
 func (s *testCommon) runTranSQL(sql string, batch int) *testkit.Result {
-	a := `/*%s;--execute=1;--backup=1;--execute=1;--enable-ignore-warnings;real_row_count=%v;--trans=%d;*/
+	a := `/*%s;--execute=1;--backup=1;--enable-ignore-warnings;real_row_count=%v;--trans=%d;*/
 inception_magic_start;
 %s
 %s;
@@ -522,7 +526,7 @@ inception_magic_commit;`
 }
 
 func (s *testCommon) mustrunTranSQL(c *C, sql string) *testkit.Result {
-	a := `/*%s;--execute=1;--backup=1;--execute=1;--enable-ignore-warnings;real_row_count=%v;--trans=10;*/
+	a := `/*%s;--execute=1;--backup=1;--enable-ignore-warnings;real_row_count=%v;--trans=10;*/
 inception_magic_start;
 %s
 %s;
@@ -571,13 +575,12 @@ func (s *testCommon) mysqlServerVersion() error {
 	if err != nil {
 		return err
 	}
-	// emptyInnodbLargePrefix := true
+	emptyInnodbLargePrefix := true
 	for rows.Next() {
 		rows.Scan(&name, &value)
 
 		switch name {
 		case "version":
-
 			if strings.Contains(strings.ToLower(value), "mariadb") {
 				s.DBType = DBTypeMariaDB
 			} else if strings.Contains(strings.ToLower(value), "tidb") {
@@ -618,13 +621,13 @@ func (s *testCommon) mysqlServerVersion() error {
 	}
 
 	// 如果没有innodb_large_prefix系统变量
-	// if emptyInnodbLargePrefix {
-	// 	if s.DBVersion > 50700 {
-	// 		s.innodbLargePrefix = true
-	// 	} else {
-	// 		s.innodbLargePrefix = false
-	// 	}
-	// }
+	if emptyInnodbLargePrefix {
+		if s.DBVersion > 50700 {
+			s.innodbLargePrefix = true
+		} else {
+			s.innodbLargePrefix = false
+		}
+	}
 	return nil
 }
 
@@ -1002,6 +1005,7 @@ func (s *testCommon) parserStmt(sql string) ast.StmtNode {
 
 func (s *testCommon) reset() {
 	config.GetGlobalConfig().Inc = s.defaultInc
+	config.GetGlobalConfig().IncLevel = s.defaultIncLevel
 	log.SetLevel(log.ErrorLevel)
 	// log.SetReportCaller(true)
 

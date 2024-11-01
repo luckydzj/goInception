@@ -15,6 +15,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const backupTableHostDataLength = 128
+
 // chanBackup 备份channal数据,用来传递备份的sql等信息
 type chanBackup struct {
 	// values []interface{}
@@ -62,15 +64,16 @@ func (s *session) runBackup(ctx context.Context) {
 		if s.checkSqlIsDML(record) || s.checkSqlIsDDL(record) {
 			s.myRecord = record
 
-			longDataType := s.mysqlCreateBackupTable(record)
-			// errno := s.mysqlCreateBackupTable(record)
-			// if errno == 2 {
-			// 	break
+			longDataType, hostMaxLength := s.mysqlCreateBackupTable(record)
+			// if record.TableInfo != nil {
+			// 	log.Errorf("mysqlCreateBackupTable: %v, %v,%v", record.TableInfo.Name, longDataType, hostMaxLength)
+			// } else {
+			// 	log.Errorf("mysqlCreateBackupTable: record: %v, %v,%v", record, longDataType, hostMaxLength)
 			// }
 			if record.TableInfo == nil {
 				s.appendErrorNo(ErrNotFoundTableInfo)
 			} else {
-				s.mysqlBackupSql(record, longDataType)
+				s.mysqlBackupSql(record, longDataType, hostMaxLength)
 			}
 
 			if s.hasError() {
@@ -150,18 +153,19 @@ func (s *session) mysqlExecuteBackupSqlForDDL(record *Record) {
 	if err := s.backupdb.Exec(sql).Error; err != nil {
 		log.Errorf("con:%d %v sql:%s", s.sessionVars.ConnectionID, err, sql)
 		if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
-			s.appendErrorMessage(myErr.Message)
+			s.appendErrorMsg(myErr.Message)
 		} else {
-			s.appendErrorMessage(err.Error())
+			s.appendErrorMsg(err.Error())
 		}
 		record.StageStatus = StatusBackupFail
+	} else {
+		record.StageStatus = StatusBackupOK
 	}
-	record.StageStatus = StatusBackupOK
 }
 
 // mysqlExecuteBackupInfoInsertSql 写入备份记录表
 // longDataType 为true表示字段类型已更新,否则为text,需要在写入时自动截断
-func (s *session) mysqlExecuteBackupInfoInsertSql(record *Record, longDataType bool) int {
+func (s *session) mysqlExecuteBackupInfoInsertSql(record *Record, longDataType bool, hostMaxLength int) int {
 
 	record.OPID = makeOPIDByTime(record.ExecTimestamp, record.ThreadId, record.SeqNo)
 
@@ -207,11 +211,17 @@ func (s *session) mysqlExecuteBackupInfoInsertSql(record *Record, longDataType b
 			ch, _ := utf8.DecodeLastRuneInString(sql_stmt)
 			if ch != utf8.RuneError {
 				break
-			} else {
-				sql_stmt = sql_stmt[:len(sql_stmt)-1]
 			}
+			sql_stmt = sql_stmt[:len(sql_stmt)-1]
 		}
 		sql_stmt = sql_stmt + "..."
+	}
+
+	host := s.opt.Host
+	if hostMaxLength > 0 {
+		if len(host) > hostMaxLength {
+			host = host[:hostMaxLength]
+		}
 	}
 
 	values := []interface{}{
@@ -221,7 +231,7 @@ func (s *session) mysqlExecuteBackupInfoInsertSql(record *Record, longDataType b
 		record.EndFile,
 		strconv.Itoa(record.EndPosition),
 		sql_stmt,
-		s.opt.Host,
+		host,
 		record.TableInfo.Schema,
 		record.TableInfo.Name,
 		strconv.Itoa(s.opt.Port),
@@ -266,7 +276,9 @@ func (s *session) mysqlCreateSqlBackupTable(dbname string) string {
 	buf.WriteString("end_binlog_file varchar(512),")
 	buf.WriteString("end_binlog_pos int,")
 	buf.WriteString("sql_statement mediumtext,")
-	buf.WriteString("host VARCHAR(64),")
+	buf.WriteString("host VARCHAR(")
+	buf.WriteString(strconv.Itoa(backupTableHostDataLength))
+	buf.WriteString("),")
 	buf.WriteString("dbname VARCHAR(64),")
 	buf.WriteString("tablename VARCHAR(64),")
 	buf.WriteString("port INT,")
@@ -280,14 +292,14 @@ func (s *session) mysqlCreateSqlBackupTable(dbname string) string {
 }
 
 func (s *session) mysqlCreateSqlFromTableInfo(dbname string, ti *TableInfo) string {
-
 	buf := bytes.NewBufferString("CREATE TABLE if not exists ")
 	buf.WriteString(fmt.Sprintf("`%s`.`%s`", dbname, ti.Name))
 	buf.WriteString("(")
 
 	buf.WriteString("id bigint auto_increment primary key, ")
 	buf.WriteString("rollback_statement mediumtext, ")
-	buf.WriteString("opid_time varchar(50)")
+	buf.WriteString("opid_time varchar(50),")
+	buf.WriteString("KEY `idx_opid_time` (`opid_time`)")
 
 	buf.WriteString(") ENGINE INNODB DEFAULT CHARSET UTF8MB4;")
 
@@ -317,7 +329,9 @@ func (s *session) getRemoteBackupDBName(record *Record) string {
 // mysqlCreateBackupTable 创建备份表.
 // 如果备份表的表结构是旧表结构,即sql_statement字段类型为text,则返回false,否则返回true
 // longDataType 为true表示字段类型已更新,否则为text,需要在写入时自动截断
-func (s *session) mysqlCreateBackupTable(record *Record) (longDataType bool) {
+// hostMaxLength 新建表时默认为128,旧表则从数据库读取
+func (s *session) mysqlCreateBackupTable(record *Record) (
+	longDataType bool, hostMaxLength int) {
 
 	if record.TableInfo == nil {
 		return
@@ -331,8 +345,8 @@ func (s *session) mysqlCreateBackupTable(record *Record) (longDataType bool) {
 	if record.TableInfo.IsCreated {
 		// 返回longDataType值
 		key := fmt.Sprintf("%s.%s", backupDBName, remoteBackupTable)
-		if v, ok := s.backupTableCacheList[key]; ok {
-			return v
+		if cache, ok := s.backupTableCacheList[key]; ok {
+			return cache.longDataType, cache.hostMaxLength
 		}
 		return
 	}
@@ -343,11 +357,11 @@ func (s *session) mysqlCreateBackupTable(record *Record) (longDataType bool) {
 			log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
 			if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
 				if myErr.Number != 1007 { /*ER_DB_CREATE_EXISTS*/
-					s.appendErrorMessage(myErr.Message)
+					s.appendErrorMsg(myErr.Message)
 					return
 				}
 			} else {
-				s.appendErrorMessage(err.Error())
+				s.appendErrorMsg(err.Error())
 				return
 			}
 		}
@@ -361,15 +375,18 @@ func (s *session) mysqlCreateBackupTable(record *Record) (longDataType bool) {
 			log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
 			if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
 				if myErr.Number != 1050 { /*ER_TABLE_EXISTS_ERROR*/
-					s.appendErrorMessage(myErr.Message)
+					s.appendErrorMsg(myErr.Message)
 					return
 				}
 			} else {
-				s.appendErrorMessage(err.Error())
+				s.appendErrorMsg(err.Error())
 				return
 			}
 		}
-		s.backupTableCacheList[key] = true
+		s.backupTableCacheList[key] = BackupTable{
+			longDataType:  true,
+			hostMaxLength: backupTableHostDataLength,
+		}
 	}
 
 	key = fmt.Sprintf("%s.%s", backupDBName, remoteBackupTable)
@@ -379,24 +396,33 @@ func (s *session) mysqlCreateBackupTable(record *Record) (longDataType bool) {
 			if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
 				if myErr.Number != 1050 { /*ER_TABLE_EXISTS_ERROR*/
 					log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
-					s.appendErrorMessage(myErr.Message)
+					s.appendErrorMsg(myErr.Message)
 					return
-				} else {
-					// 获取sql_statement字段类型,用以兼容类型为text的旧表结构
-					longDataType = s.checkBackupTableSqlStmtColumnType(backupDBName)
 				}
+				// 获取sql_statement字段类型,用以兼容类型为text的旧表结构
+				longDataType = s.checkBackupTableSqlStmtColumnType(backupDBName)
+				// host字段长度
+				hostMaxLength = s.checkBackupTableHostMaxLength(backupDBName)
 			} else {
-				s.appendErrorMessage(err.Error())
+				s.appendErrorMsg(err.Error())
 				return
 			}
 		} else {
 			longDataType = true
+			hostMaxLength = backupTableHostDataLength
 		}
-		s.backupTableCacheList[key] = longDataType
+		s.backupTableCacheList[key] = BackupTable{
+			longDataType:  longDataType,
+			hostMaxLength: hostMaxLength,
+		}
 	}
 
+	// 从remoteBackupTable表获取cache
+	if cache, ok := s.backupTableCacheList[key]; ok {
+		longDataType = cache.longDataType
+		hostMaxLength = cache.hostMaxLength
+	}
 	record.TableInfo.IsCreated = true
-
 	return
 }
 
@@ -414,19 +440,56 @@ func (s *session) checkBackupTableSqlStmtColumnType(dbname string) (longDataType
 	if err2 != nil {
 		log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err2)
 		if myErr, ok := err2.(*mysqlDriver.MySQLError); ok {
-			s.appendErrorMessage(myErr.Message)
+			s.appendErrorMsg(myErr.Message)
 		} else {
-			s.appendErrorMessage(err2.Error())
+			s.appendErrorMsg(err2.Error())
 		}
 	}
 	if rows != nil {
 		defer rows.Close()
 		for rows.Next() {
-			rows.Scan(&res)
+			_ = rows.Scan(&res)
 		}
 		return res != "text"
 	}
 
 	return
+
+}
+
+// checkBackupTableHostMaxLength 检查host字段类型的长度
+func (s *session) checkBackupTableHostMaxLength(dbname string) (length int) {
+
+	// 获取sql_statement字段类型,用以兼容类型为text的旧表结构
+	sql := fmt.Sprintf(`select COLUMN_TYPE from information_schema.columns
+					where table_schema='%s' and table_name='%s' and column_name='host';`,
+		dbname, remoteBackupTable)
+
+	var res string
+
+	rows, err2 := s.backupdb.DB().Query(sql)
+	if err2 != nil {
+		log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err2)
+		if myErr, ok := err2.(*mysqlDriver.MySQLError); ok {
+			s.appendErrorMsg(myErr.Message)
+		} else {
+			s.appendErrorMsg(err2.Error())
+		}
+	}
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			_ = rows.Scan(&res)
+		}
+		if res != "" {
+			typeLength := GetDataTypeLength(res)
+			if len(typeLength) > 0 {
+				return typeLength[0]
+			}
+		}
+		return 0
+	}
+
+	return 0
 
 }

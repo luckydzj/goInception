@@ -40,7 +40,7 @@ func (s *session) createNewConnection(dbName string) {
 
 	if err != nil {
 		log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
-		s.appendErrorMessage(err.Error())
+		s.appendErrorMsg(err.Error())
 		return
 	}
 
@@ -71,11 +71,10 @@ func (s *session) raw(sqlStr string) (rows *sql.Rows, err error) {
 			if err1 != nil {
 				return rows, err1
 			}
-			s.appendErrorMessage(err.Error())
+			s.appendErrorMsg(err.Error())
 			continue
-		} else {
-			return
 		}
+		return
 	}
 	return
 }
@@ -99,9 +98,8 @@ func (s *session) exec(sqlStr string, retry bool) (res sql.Result, err error) {
 			if retry {
 				s.appendWarningMessage(err.Error())
 				continue
-			} else {
-				return
 			}
+			return
 		}
 
 		// 连接超时时自动重连数据库. 仅在超时设置超过10min时开启该功能
@@ -138,9 +136,8 @@ func (s *session) execDDL(sqlStr string, retry bool) (res sql.Result, err error)
 			if retry {
 				s.appendWarningMessage(err.Error())
 				continue
-			} else {
-				return
 			}
+			return
 		}
 		return
 	}
@@ -161,7 +158,7 @@ func (s *session) rawScan(sqlStr string, dest interface{}) (err error) {
 			if err1 != nil {
 				return err1
 			}
-			s.appendErrorMessage(err.Error())
+			s.appendErrorMsg(err.Error())
 			continue
 		}
 		return
@@ -183,7 +180,7 @@ func (s *session) rawDB(dest interface{}, sqlStr string, values ...interface{}) 
 			if err1 != nil {
 				return err1
 			}
-			s.appendErrorMessage(err.Error())
+			s.appendErrorMsg(err.Error())
 			continue
 		}
 		return
@@ -215,9 +212,9 @@ func (s *session) initConnection() (err error) {
 		log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
 		if err != mysqlDriver.ErrInvalidConn {
 			if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
-				s.appendErrorMessage(myErr.Message)
+				s.appendErrorMsg(myErr.Message)
 			} else {
-				s.appendErrorMessage(err.Error())
+				s.appendErrorMsg(err.Error())
 			}
 			return
 		}
@@ -226,9 +223,9 @@ func (s *session) initConnection() (err error) {
 	if err != nil {
 		log.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
 		if myErr, ok := err.(*mysqlDriver.MySQLError); ok {
-			s.appendErrorMessage(myErr.Message)
+			s.appendErrorMsg(myErr.Message)
 		} else {
-			s.appendErrorMessage(err.Error())
+			s.appendErrorMsg(err.Error())
 		}
 	}
 	return

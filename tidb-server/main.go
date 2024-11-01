@@ -135,6 +135,19 @@ func main() {
 		terror.Log(errors.Trace(ddl.Stop()))
 	}
 
+	if config.GetGlobalConfig().Inc.EnableBlobType ||
+		config.GetGlobalConfig().Inc.EnableJsonType ||
+		config.GetGlobalConfig().Inc.EnableTimeStampType ||
+		config.GetGlobalConfig().Inc.EnableEnumSetBit {
+		fmt.Println("################################################")
+		fmt.Println("Warning: The following parameters will be deprecated and replaced with disable_types:")
+		fmt.Println("\tenable_blob_type")
+		fmt.Println("\tenable_json_type")
+		fmt.Println("\tenable_enum_set_bit")
+		fmt.Println("\tenable_timestamp_type")
+		fmt.Println("https://github.com/hanchuanchuan/goInception/pull/418")
+		fmt.Println("################################################")
+	}
 	runServer()
 	cleanup()
 	os.Exit(0)
@@ -287,6 +300,25 @@ func overrideConfig() {
 	}
 	if actualFlags[nmProxyProtocolHeaderTimeout] {
 		cfg.ProxyProtocol.HeaderTimeout = *proxyProtocolHeaderTimeout
+	}
+
+	// cofiguration support environment variables
+	if backupHost := os.Getenv("BACKUP_HOST"); backupHost != "" {
+		cfg.Inc.BackupHost = backupHost
+	}
+	if backupPort := os.Getenv("BACKUP_PORT"); backupPort != "" {
+		portUint, err := strconv.ParseUint(backupPort, 10, 16)
+		if err != nil {
+			log.Errorf("backup port should be between 0 and 65535.")
+			os.Exit(-1)
+		}
+		cfg.Inc.BackupPort = uint(portUint)
+	}
+	if backupUser := os.Getenv("BACKUP_USER"); backupUser != "" {
+		cfg.Inc.BackupUser = backupUser
+	}
+	if backupPassword := os.Getenv("BACKUP_PASSWORD"); backupPassword != "" {
+		cfg.Inc.BackupPassword = backupPassword
 	}
 }
 

@@ -10,6 +10,7 @@ backup_host   |  ""    |   string     |   备份数据库IP地址
 backup_port   |  0    |   int     |     备份数据库端口
 backup_user   |  ""    |   string     |   备份数据库用户名
 backup_password   |  ""    |   string    |   备份数据库密码
+backup_tls `v1.4.0`   |  ""    |   string    |   备份数据库ssl认证方式,可选值请参考 (https://github.com/go-sql-driver/mysql/issues/899#issuecomment-443493840)
 
 并且在执行sql时，添加 ```--backup=true``` 或 ```--backup=1``` 选项
 
@@ -60,7 +61,7 @@ opid_time   |  varchar(50)    | 关联执行操作ID
 
 ## 备份功能详细步骤
 
-1. 配置备份数据库，并在执行SQl时开启备份功能
+1. 配置备份数据库，并在执行SQL时开启备份功能
 2. 在执行SQL前记录binlog位置和线程号(逐条执行逐条记录)
 3. 执行SQL
 4. 在执行SQL后记录binlog位置和线程号

@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cznic/mathutil"
 	"github.com/hanchuanchuan/goInception/ast"
 	"github.com/hanchuanchuan/goInception/infoschema"
 	"github.com/hanchuanchuan/goInception/model"
@@ -39,6 +38,7 @@ import (
 	"github.com/hanchuanchuan/goInception/util/format"
 	"github.com/pingcap/errors"
 	"golang.org/x/net/context"
+	"modernc.org/mathutil"
 )
 
 // ShowExec represents a show executor.
@@ -620,7 +620,7 @@ func (e *ShowExec) fetchShowCreateTable() error {
 	if partitionInfo != nil {
 		// this if statement takes care of range columns case
 		if partitionInfo.Columns != nil && partitionInfo.Type == model.PartitionTypeRange {
-			buf.WriteString(fmt.Sprintf("\nPARTITION BY RANGE COLUMNS("))
+			buf.WriteString("\nPARTITION BY RANGE COLUMNS(")
 			for i, col := range partitionInfo.Columns {
 				buf.WriteString(col.L)
 				if i < len(partitionInfo.Columns)-1 {

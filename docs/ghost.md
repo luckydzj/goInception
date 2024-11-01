@@ -2,8 +2,8 @@
 
 ### gh-ost
 
-- gh-ost is built-in GoInception. No additional installation.
-- About Stop, Pause, Recover are contained in GoInception command.
+- gh-ost is built-in GoInception. No additional installation. About Stop, Pause, Recover are contained in GoInception command.
+- Support calling gh-ost in binary mode, the parameter switch is `ghost_bin_dir`, please refer to the `osc_bin_dir` parameter of pt-osc for usage, if this parameter is not specified, it will still be called with the built-in gh-ost.
 
 #### Options
 
@@ -99,6 +99,7 @@ osc_print_none                         | false          | bool | If value is 1, 
 Option |  default  |  type | description
 ------------ | ------------- | ------------ | ------------
 ghost_on                               | false  | bool | gh-ost swtich
+ghost_bin_dir `v1.2.5`                 | '' | string | gh-ost binary path
 ghost_aliyun_rds                       | false  | bool | Ali rds database label
 ghost_allow_master_master              | false  | bool | If gh-ost can run in Dual master structure, with option `-assume-master-host`
 |ghost_allow_nullable_unique_key|FALSE|bool|If gh-ost can depend on Unique key in NULL when migrate.Default unique key can not be NULL.If yes, data will inconsistency in migration.|

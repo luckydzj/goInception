@@ -109,7 +109,7 @@ func GetAllCharsets() []*Desc {
 // and returns a boolean.
 func ValidCharsetAndCollation(cs string, co string) bool {
 	// We will use utf8 as a default charset.
-	if cs == "" {
+	if cs == "" || strings.EqualFold(cs, "utf8mb3") {
 		cs = "utf8"
 	}
 	cs = strings.ToLower(cs)
@@ -160,7 +160,7 @@ func GetCharsetInfo(cs string) (string, string, error) {
 // GetCharsetDesc gets charset descriptions in the local charsets.
 func GetCharsetDesc(cs string) (*Desc, error) {
 	switch strings.ToLower(cs) {
-	case CharsetUTF8:
+	case CharsetUTF8, CharsetUTF8MB3:
 		return descs[0], nil
 	case CharsetUTF8MB4:
 		return descs[1], nil
@@ -191,8 +191,22 @@ func GetCollations() []*Collation {
 	return collations
 }
 
+func utf8Alias(csname string) string {
+	switch csname {
+	case "utf8mb3_bin":
+		csname = "utf8_bin"
+	case "utf8mb3_unicode_ci":
+		csname = "utf8_unicode_ci"
+	case "utf8mb3_general_ci":
+		csname = "utf8_general_ci"
+	default:
+	}
+	return csname
+}
+
 func GetCollationByName(name string) (*Collation, error) {
-	collation, ok := collationsNameMap[strings.ToLower(name)]
+	csname := utf8Alias(strings.ToLower(name))
+	collation, ok := collationsNameMap[csname]
 	if !ok {
 		return nil, ErrUnknownCollation.GenWithStackByArgs(name)
 	}
@@ -205,7 +219,8 @@ const (
 	// CollationBin is the default collation for CharsetBin.
 	CollationBin = "binary"
 	// CharsetUTF8 is the default charset for string types.
-	CharsetUTF8 = "utf8"
+	CharsetUTF8    = "utf8"
+	CharsetUTF8MB3 = "utf8mb3"
 	// CollationUTF8 is the default collation for CharsetUTF8.
 	CollationUTF8 = "utf8_bin"
 	// CharsetUTF8MB4 represents 4 bytes utf8, which works the same way as utf8 in Go.
@@ -444,6 +459,54 @@ var collations = []*Collation{
 	{247, "utf8mb4", "utf8mb4_vietnamese_ci", false},
 	{248, "gb18030", "gb18030_chinese_ci", false},
 	{255, "utf8mb4", "utf8mb4_0900_ai_ci", false},
+	{256, "utf8mb4", "utf8mb4_de_pb_0900_ai_ci", false},
+	{257, "utf8mb4", "utf8mb4_is_0900_ai_ci", false},
+	{258, "utf8mb4", "utf8mb4_lv_0900_ai_ci", false},
+	{259, "utf8mb4", "utf8mb4_ro_0900_ai_ci", false},
+	{260, "utf8mb4", "utf8mb4_sl_0900_ai_ci", false},
+	{261, "utf8mb4", "utf8mb4_pl_0900_ai_ci", false},
+	{262, "utf8mb4", "utf8mb4_et_0900_ai_ci", false},
+	{263, "utf8mb4", "utf8mb4_es_0900_ai_ci", false},
+	{264, "utf8mb4", "utf8mb4_sv_0900_ai_ci", false},
+	{265, "utf8mb4", "utf8mb4_tr_0900_ai_ci", false},
+	{266, "utf8mb4", "utf8mb4_cs_0900_ai_ci", false},
+	{267, "utf8mb4", "utf8mb4_da_0900_ai_ci", false},
+	{268, "utf8mb4", "utf8mb4_lt_0900_ai_ci", false},
+	{269, "utf8mb4", "utf8mb4_sk_0900_ai_ci", false},
+	{270, "utf8mb4", "utf8mb4_es_trad_0900_ai_ci", false},
+	{271, "utf8mb4", "utf8mb4_la_0900_ai_ci", false},
+	{273, "utf8mb4", "utf8mb4_eo_0900_ai_ci", false},
+	{274, "utf8mb4", "utf8mb4_hu_0900_ai_ci", false},
+	{275, "utf8mb4", "utf8mb4_hr_0900_ai_ci", false},
+	{277, "utf8mb4", "utf8mb4_vi_0900_ai_ci", false},
+	{278, "utf8mb4", "utf8mb4_0900_as_cs", false},
+	{279, "utf8mb4", "utf8mb4_de_pb_0900_as_cs", false},
+	{280, "utf8mb4", "utf8mb4_is_0900_as_cs", false},
+	{281, "utf8mb4", "utf8mb4_lv_0900_as_cs", false},
+	{282, "utf8mb4", "utf8mb4_ro_0900_as_cs", false},
+	{283, "utf8mb4", "utf8mb4_sl_0900_as_cs", false},
+	{284, "utf8mb4", "utf8mb4_pl_0900_as_cs", false},
+	{285, "utf8mb4", "utf8mb4_et_0900_as_cs", false},
+	{286, "utf8mb4", "utf8mb4_es_0900_as_cs", false},
+	{287, "utf8mb4", "utf8mb4_sv_0900_as_cs", false},
+	{288, "utf8mb4", "utf8mb4_tr_0900_as_cs", false},
+	{289, "utf8mb4", "utf8mb4_cs_0900_as_cs", false},
+	{290, "utf8mb4", "utf8mb4_da_0900_as_cs", false},
+	{291, "utf8mb4", "utf8mb4_lt_0900_as_cs", false},
+	{292, "utf8mb4", "utf8mb4_sk_0900_as_cs", false},
+	{293, "utf8mb4", "utf8mb4_es_trad_0900_as_cs", false},
+	{294, "utf8mb4", "utf8mb4_la_0900_as_cs", false},
+	{296, "utf8mb4", "utf8mb4_eo_0900_as_cs", false},
+	{297, "utf8mb4", "utf8mb4_hu_0900_as_cs", false},
+	{298, "utf8mb4", "utf8mb4_hr_0900_as_cs", false},
+	{300, "utf8mb4", "utf8mb4_vi_0900_as_cs", false},
+	{303, "utf8mb4", "utf8mb4_ja_0900_as_cs", false},
+	{304, "utf8mb4", "utf8mb4_ja_0900_as_cs_ks", false},
+	{305, "utf8mb4", "utf8mb4_0900_as_ci", false},
+	{306, "utf8mb4", "utf8mb4_ru_0900_ai_ci", false},
+	{307, "utf8mb4", "utf8mb4_ru_0900_as_cs", false},
+	{308, "utf8mb4", "utf8mb4_zh_0900_as_cs", false},
+	{309, "utf8mb4", "utf8mb4_0900_bin", false},
 }
 
 // init method always puts to the end of file.

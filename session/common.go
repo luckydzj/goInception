@@ -7,6 +7,7 @@ package session
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	// "github.com/hanchuanchuan/goInception/types"
 	"github.com/hanchuanchuan/goInception/ast"
 	"github.com/hanchuanchuan/goInception/types"
+	"github.com/jinzhu/copier"
 	"github.com/jinzhu/gorm"
 	log "github.com/sirupsen/logrus"
 )
@@ -66,6 +68,7 @@ var charSets = map[string]int{
 	"utf16le":  4,
 	"utf32":    4,
 	"utf8":     3,
+	"utf8mb3":  3,
 	"utf8mb4":  4,
 }
 
@@ -180,6 +183,33 @@ type ExplainInfo struct {
 	EstRows string `gorm:"Column:estRows"`
 }
 
+// OceanBaseQueryPlan OceanBase 执行计划信息
+type OceanBaseQueryPlan struct {
+	QueryPlan string `gorm:"Column:Query Plan"`
+}
+
+// OceanBaseExplainInfo OceanBase 执行计划标准格式
+type OceanBaseExplainInfo struct {
+	ID       int         `json:"ID"`
+	Operator string      `json:"OPERATOR"`
+	Name     string      `json:"NAME"`
+	EstRows  int64       `json:"EST.ROWS"`
+	Cost     int         `json:"COST"`
+	OutPut   interface{} `json:"output"`
+}
+
+// Unmarshal 将数据转化为 OceanBaseExplainInfo
+func (info *OceanBaseExplainInfo) Unmarshal(data interface{}) error {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	if b != nil {
+		return json.Unmarshal(b, &info)
+	}
+	return nil
+}
+
 // FieldInfo 字段信息
 type FieldInfo struct {
 	// gorm.Model
@@ -204,7 +234,7 @@ type FieldInfo struct {
 
 // MaskingFieldInfo 脱敏功能的字段信息
 type MaskingFieldInfo struct {
-	Index  uint8  `json:"index"`
+	Index  uint16 `json:"index"`
 	Field  string `json:"field"`
 	Type   string `json:"type"`
 	Table  string `json:"table"`
@@ -212,6 +242,7 @@ type MaskingFieldInfo struct {
 	Alias  string `json:"alias"`
 }
 
+// IsGenerated 是否为计算列
 func (f *FieldInfo) IsGenerated() bool {
 	if f.isGenerated == nil {
 		v := strings.Contains(f.Extra, "VIRTUAL GENERATED") ||
@@ -272,6 +303,17 @@ type TableInfo struct {
 
 	// 有效列数，移除已删除列和生成列
 	effectiveFieldCount int
+
+	// used for masking
+	maskingFields []MaskingFieldInfo
+}
+
+// BackupTable 表$_$inception_backup_information$_$相关信息
+type BackupTable struct {
+	// sql_statement字段类型字段的数据类型是否为text
+	longDataType bool
+	// host字段长度,新建表的默认值为128
+	hostMaxLength int
 }
 
 // IndexInfo 索引信息
@@ -311,7 +353,7 @@ type DBInfo struct {
 	IsNew bool
 }
 
-// EffectiveFieldCount 有效列数，移除已删除列和生成列
+// EffectiveFieldCount 有效列数，会移除已删除列和生成列
 func (t *TableInfo) EffectiveFieldCount() (count int) {
 	if t == nil {
 		return
@@ -330,13 +372,31 @@ func (t *TableInfo) EffectiveFieldCount() (count int) {
 	return
 }
 
+// ValidFieldCount 可用列
+func (t *TableInfo) ValidFieldCount() (count int) {
+	if t == nil {
+		return
+	}
+
+	for _, f := range t.Fields {
+		if !f.IsDeleted && !f.IsGenerated() {
+			count++
+		}
+	}
+	return count
+}
+
 func (t *TableInfo) copy() *TableInfo {
 	p := &TableInfo{}
+
+	_ = copier.Copy(p, t)
 
 	p.Schema = t.Schema
 	p.Name = t.Name
 	p.AsName = t.AsName
 	p.AlterCount = t.AlterCount
+	p.TableSize = t.TableSize
+	p.Collation = t.Collation
 
 	p.Fields = make([]FieldInfo, len(t.Fields))
 	copy(p.Fields, t.Fields)
@@ -893,6 +953,13 @@ func Max64(x, y int64) int64 {
 	return y
 }
 
+func Max8(x, y uint8) uint8 {
+	if x >= y {
+		return x
+	}
+	return y
+}
+
 func Min(x, y int) int {
 	if x < y {
 		return x
@@ -902,22 +969,12 @@ func Min(x, y int) int {
 
 // IsNumeric 判断是否为数字
 func IsNumeric(val interface{}) bool {
-	// switch str := val.(type) {
-	// case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-	// case float32, float64, complex64, complex128:
-	// 	return true
-	// case string:
-	// 	for _, v := range str {
-	// 		if !unicode.IsNumber(v) {
-	// 			return false
-	// 		}
-	// 	}
-	// }
-	// return false
 	switch v := val.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return true
 	case float32, float64, complex64, complex128:
+		return true
+	case []byte:
 		return true
 	case string:
 		str := v
@@ -959,6 +1016,8 @@ func IsNumeric(val interface{}) bool {
 			}
 		}
 		return true
+	default:
+		// fmt.Printf("%#v %T\n", v, v)
 	}
 
 	return false

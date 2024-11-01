@@ -8,6 +8,7 @@ endif
 FAIL_ON_STDOUT := awk '{ print } END { if (NR > 0) { exit 1 } }'
 
 CURDIR := $(shell pwd)
+UNAME_S := $(shell uname -s)
 path_to_add := $(addsuffix /bin,$(subst :,/bin:,$(GOPATH)))
 export PATH := $(path_to_add):$(PATH)
 
@@ -23,6 +24,14 @@ ifeq ("$(SHORT)", "1")
 	GOTEST    := CGO_ENABLED=1 $(GO) test -p 3 -short
 else
 	GOTEST    := CGO_ENABLED=1 $(GO) test -p 3
+endif
+
+ifeq "$(GOVERALLS_SERVICE)" ""
+	GOVERALLS_SERVICE    := "circle-ci"
+	GOVERALLS_PROJECT	 := "/home/circleci/go/src/github.com/hanchuanchuan/goInception"
+else
+	GOVERALLS_SERVICE    := "github"
+	GOVERALLS_PROJECT	 := "/home/runner/work/goInception/goInception"
 endif
 
 OVERALLS  := CGO_ENABLED=1 GO111MODULE=on overalls
@@ -51,7 +60,7 @@ CHECK_LDFLAGS += $(LDFLAGS) ${TEST_LDFLAGS}
 
 TARGET = ""
 
-.PHONY: all build update parser clean todo test gotest interpreter server dev benchkv benchraw check parserlib checklist testapi docs
+.PHONY: all build update parser clean todo test gotest interpreter server dev benchkv benchraw check parserlib checklist testapi docs level
 
 default: server buildsucc
 
@@ -72,7 +81,8 @@ goyacc:
 	@$(GOBUILD) -o bin/goyacc parser/goyacc/main.go
 
 bin/goyacc: parser/goyacc/main.go parser/goyacc/format_yacc.go
-	GO111MODULE=on go build -o bin/goyacc parser/goyacc/main.go parser/goyacc/format_yacc.go
+	$(GO) mod download
+	$(GO) build -o bin/goyacc parser/goyacc/main.go parser/goyacc/format_yacc.go
 
 parser: parser/parser.go parser/hintparser.go
 
@@ -80,11 +90,29 @@ parser/parser.go: parser/parser.y bin/goyacc
 	@echo "bin/goyacc -o $@ -p yy -t Parser $<"
 	@bin/goyacc -o $@ -p yy -t Parser $< && echo 'SUCCESS!' || ( rm -f $@ && echo 'Please check y.output for more information' && exit 1 )
 	@rm -f y.output
+	# Clean invalid UTF-8 encoding at the end
+
+	echo "os: ${UNAME_S}"
+ifeq ($(UNAME_S),Darwin)
+	sed -i '' '$$d' $@;
+else
+	sed -i '$$d' $@;
+endif
+	gofmt -s -w $@
 
 parser/hintparser.go: parser/hintparser.y bin/goyacc
 	@echo "bin/goyacc -o $@ -p yyhint -t hintParser $<"
 	@bin/goyacc -o $@ -p yyhint -t hintParser $< && echo 'SUCCESS!' || ( rm -f $@ && echo 'Please check y.output for more information' && exit 1 )
 	@rm -f y.output
+	# Clean invalid UTF-8 encoding at the end
+
+	echo "os: ${UNAME_S}"
+ifeq ($(UNAME_S),Darwin)
+	sed -i '' '$$d' $@;
+else
+	sed -i '$$d' $@;
+endif
+	gofmt -s -w $@
 
 # %arser.go: prefix = $(@:parser.go=)
 # %arser.go: %arser.y bin/goyacc
@@ -189,17 +217,17 @@ explaintest: server
 	@cd cmd/explaintest && ./run-tests.sh -s ../../bin/goInception
 
 gotest: parserlib
-	$(GO) get github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
+	$(GO) install github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
 	@$(GOFAIL_ENABLE)
 ifeq ("$(TRAVIS_COVERAGE)", "1")
 	@echo "Running in TRAVIS_COVERAGE mode."
 	@export log_level=error; \
-	go get github.com/go-playground/overalls
+	go install github.com/go-playground/overalls@7df9f728c018
 	# go get github.com/mattn/goveralls
 	# $(OVERALLS) -project=github.com/hanchuanchuan/goInception -covermode=count -ignore='.git,vendor,cmd,docs,LICENSES' || { $(GOFAIL_DISABLE); exit 1; }
-	# $(GOVERALLS) -service=travis-ci -coverprofile=overalls.coverprofile || { $(GOFAIL_DISABLE); exit 1; }
+	# $(GOVERALLS) -service=$(GOVERALLS_SERVICE) -coverprofile=overalls.coverprofile || { $(GOFAIL_DISABLE); exit 1; }
 
-	$(OVERALLS) -project=github.com/hanchuanchuan/goInception -covermode=count -ignore='.git,vendor,cmd,docs,LICENSES' -concurrency=1 -- -short || { $(GOFAIL_DISABLE); exit 1; }
+	$(OVERALLS) -project=$(GOVERALLS_PROJECT) -covermode=count -ignore='.git,vendor,cmd,docs,LICENSES' -concurrency=1 -- -short || { $(GOFAIL_DISABLE); exit 1; }
 else
 
 ifeq ("$(API)", "1")
@@ -209,6 +237,7 @@ ifeq ("$(API)", "1")
 else
 	@echo "Running in native mode."
 	@export log_level=error;
+	$(GO) mod tidy;
 	$(GOTEST) -timeout 30m -ldflags '$(TEST_LDFLAGS)' -cover $(PACKAGES) || { $(GOFAIL_DISABLE); exit 1; }
 endif
 
@@ -222,21 +251,21 @@ testapi: parserlib
 
 
 race: parserlib
-	$(GO) get github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
+	$(GO) install github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
 	@$(GOFAIL_ENABLE)
 	@export log_level=debug; \
 	$(GOTEST) -timeout 30m -race $(PACKAGES) || { $(GOFAIL_DISABLE); exit 1; }
 	@$(GOFAIL_DISABLE)
 
 leak: parserlib
-	$(GO) get github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
+	$(GO) install github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
 	@$(GOFAIL_ENABLE)
 	@export log_level=debug; \
 	$(GOTEST) -tags leak $(PACKAGES) || { $(GOFAIL_DISABLE); exit 1; }
 	@$(GOFAIL_DISABLE)
 
 tikv_integration_test: parserlib
-	$(GO) get github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
+	$(GO) install github.com/etcd-io/gofail@v0.0.0-20180808172546-51ce9a71510a
 	@$(GOFAIL_ENABLE)
 	$(GOTEST) ./store/tikv/. -with-tikv=true || { $(GOFAIL_DISABLE); exit 1; }
 	@$(GOFAIL_DISABLE)
@@ -371,3 +400,7 @@ docker-push:
 
 docs:
 	$(shell bash docs/deploy.sh)
+
+level:
+	$(GO) run config/generate_levels/main.go
+	gofmt -w config/error_level.go

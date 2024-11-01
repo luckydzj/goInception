@@ -105,7 +105,8 @@ func (s *session) init() {
 	s.dbCacheList = make(map[string]*DBInfo)
 
 	s.backupDBCacheList = make(map[string]bool)
-	s.backupTableCacheList = make(map[string]bool)
+	s.backupTableCacheList = make(map[string]BackupTable)
+	s.disableTypes = make(map[string]uint8)
 
 	s.inc = config.GetGlobalConfig().Inc
 	s.osc = config.GetGlobalConfig().Osc
@@ -132,6 +133,7 @@ func (s *session) init() {
 
 	// 自定义审核级别,通过解析config.GetGlobalConfig().IncLevel生成
 	s.parseIncLevel()
+
 }
 
 // clear 清理变量或map等信息
@@ -382,7 +384,7 @@ func (s *session) audit(ctx context.Context, sql string) (err error) {
 				// 进程Killed
 				if err := checkClose(ctx); err != nil {
 					log.Warn("Killed: ", err)
-					s.appendErrorMessage("Operation has been killed!")
+					s.appendErrorMsg("Operation has been killed!")
 					if s.opt != nil && s.opt.Print {
 						s.printSets.Append(2, "", "", strings.TrimSpace(s.myRecord.Buf.String()))
 					} else if s.opt != nil && s.opt.split {
@@ -510,19 +512,21 @@ func (s *session) checkOptions() error {
 		// 不再检查密码是否为空
 		if s.inc.BackupHost == "" || s.inc.BackupPort == 0 || s.inc.BackupUser == "" {
 			return errors.New(s.getErrorMessage(ER_INVALID_BACKUP_HOST_INFO))
-		} else {
-			addr = fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=%s&parseTime=True&loc=Local&autocommit=1",
-				s.inc.BackupUser, s.inc.BackupPassword, s.inc.BackupHost, s.inc.BackupPort,
-				s.inc.DefaultCharset)
-			backupdb, err := gorm.Open("mysql", addr)
-
-			if err != nil {
-				return fmt.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
-			}
-
-			backupdb.LogMode(false)
-			s.backupdb = backupdb
 		}
+		addr = fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=%s&parseTime=True&loc=Local&autocommit=1",
+			s.inc.BackupUser, s.inc.BackupPassword, s.inc.BackupHost, s.inc.BackupPort,
+			s.inc.DefaultCharset)
+		if s.inc.BackupTLS != "" {
+			addr += "&tls=" + s.inc.BackupTLS
+		}
+		backupdb, err := gorm.Open("mysql", addr)
+
+		if err != nil {
+			return fmt.Errorf("con:%d %v", s.sessionVars.ConnectionID, err)
+		}
+
+		backupdb.LogMode(false)
+		s.backupdb = backupdb
 	}
 
 	tmp := s.processInfo.Load()
@@ -545,7 +549,7 @@ func (s *session) checkOptions() error {
 	s.setLockWaitTimeout()
 
 	if s.opt.Backup && s.dbType == DBTypeTiDB {
-		s.appendErrorMessage("TiDB暂不支持备份功能.")
+		s.appendErrorMsg("TiDB暂不支持备份功能.")
 	}
 
 	return nil

@@ -149,6 +149,7 @@ var tokenMap = map[string]int{
 	"AS":               as,
 	"ASC":              asc,
 	"ASCII":            ascii,
+	"ATTRIBUTES":       attributes,
 	"AUTO_INCREMENT":   autoIncrement,
 	"AUTO_RANDOM":      autoRandom,
 	"AUTO_RANDOM_BASE": autoRandomBase,
@@ -159,6 +160,7 @@ var tokenMap = map[string]int{
 	"BIGINT":           bigIntType,
 	"BINARY":           binaryType,
 	"BINLOG":           binlog,
+	"BINDING":          binding,
 	"BIT":              bitType,
 	"BIT_AND":          bitAnd,
 	"BIT_OR":           bitOr,
@@ -205,6 +207,7 @@ var tokenMap = map[string]int{
 	"CREATE":                   create,
 	"CROSS":                    cross,
 	"CURRENT":                  current,
+	"CURDATE":                  curDate,
 	"CURRENT_DATE":             currentDate,
 	"CURRENT_TIME":             currentTime,
 	"CURRENT_TIMESTAMP":        currentTs,
@@ -343,6 +346,7 @@ var tokenMap = map[string]int{
 	"LIST":                     list,
 	"LOAD":                     load,
 	"LOCAL":                    local,
+	"LOCALITY":                 locality,
 	"LOCALTIME":                localTime,
 	"LOCALTIMESTAMP":           localTs,
 	"LOCK":                     lock,
@@ -357,6 +361,7 @@ var tokenMap = map[string]int{
 	"MAX_QUERIES_PER_HOUR":     maxQueriesPerHour,
 	"MAX_ROWS":                 maxRows,
 	"MAX_UPDATES_PER_HOUR":     maxUpdatesPerHour,
+	"MAX_USED_PART_ID":         maxUsedPartId,
 	"MAX_USER_CONNECTIONS":     maxUserConnections,
 	"MAXVALUE":                 maxValue,
 	"MEDIUMBLOB":               mediumblobType,
@@ -394,14 +399,18 @@ var tokenMap = map[string]int{
 	"ORDER":                    order,
 	"OUTER":                    outer,
 	"PACK_KEYS":                packKeys,
+	"PARSER":                   parser,
 	"PARTITION":                partition,
+	"PARTITIONING":             partitioning,
 	"PARTITIONS":               partitions,
 	"PASSWORD":                 password,
 	"PLUGINS":                  plugins,
 	"POSITION":                 position,
+	"PRE_SPLIT_REGIONS":        preSplitRegions,
 	"PRECISION":                precisionType,
 	"PREPARE":                  prepare,
 	"PRIMARY":                  primary,
+	"PRIMARY_ZONE":             primaryZone,
 	"PRIVILEGES":               privileges,
 	"PROCEDURE":                procedure,
 	"PROCESS":                  process,
@@ -421,7 +430,9 @@ var tokenMap = map[string]int{
 	"REFERENCES":               references,
 	"REGEXP":                   regexpKwd,
 	"RELOAD":                   reload,
+	"REMOVE":                   remove,
 	"RENAME":                   rename,
+	"REORGANIZE":               reorganize,
 	"REPAIR":                   repair,
 	"REPEAT":                   repeat,
 	"REPEATABLE":               repeatable,
@@ -482,8 +493,12 @@ var tokenMap = map[string]int{
 	"SUPER":                    super,
 	"SYSTEM_TIME":              systemTime,
 	"TABLE":                    tableKwd,
+	"TABLEGROUP":               tablegroup,
+	"TABLEGROUP_ID":            tablegroupId,
+	"TABLEGROUPS":              tablegroups,
 	"TABLES":                   tables,
 	"TABLESPACE":               tablespace,
+	"TEMPLATE":                 template,
 	"TEMPORARY":                temporary,
 	"TEMPTABLE":                temptable,
 	"TERMINATED":               terminated,
@@ -775,11 +790,17 @@ func handleIdent(lval *yySymType) int {
 // SpecialCommentsController controls whether special comments like `/*T![xxx] yyy */`
 // can be parsed as `yyy`. To add such rules, please use SpecialCommentsController.Register().
 // For example:
-//     SpecialCommentsController.Register("30100");
+//
+//	SpecialCommentsController.Register("30100");
+//
 // Now the parser will treat
-//   select a, /*T![30100] mysterious_keyword */ from t;
+//
+//	select a, /*T![30100] mysterious_keyword */ from t;
+//
 // and
-//   select a, mysterious_keyword from t;
+//
+//	select a, mysterious_keyword from t;
+//
 // equally.
 // Similar special comments without registration are ignored by parser.
 var SpecialCommentsController = specialCommentsCtrl{

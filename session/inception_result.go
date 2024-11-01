@@ -92,10 +92,14 @@ type Record struct {
 	// 是否开启OSC
 	useOsc bool
 
-	// update多表时,记录多余的表
+	// update/delete多表时,记录多余的表
 	// update多表时,默认set第一列的表为主表,其余表才会记录到该处
+	// delete多表时,默认delete后第一个表为主表,其余表才会记录到该处
 	// 仅在发现多表操作时,初始化该参数
 	MultiTables map[string]*TableInfo
+
+	// 判断该语句是否是需要被合并的(只有 alter table, create index, drop index三种语句需要被合并)，不需要为0，已经被合并过的SQL会被设置为-1，需要的数字为对应的合并后的SQL的行号
+	NeedMerge int
 }
 
 func (r *Record) appendWarningMessage(msg string) {
@@ -296,7 +300,7 @@ func NewRecordSets() *MyRecordSets {
 		fieldCount: 0,
 	}
 
-	rc.fields = make([]*ast.ResultField, 12)
+	rc.fields = make([]*ast.ResultField, 13)
 
 	// 序号
 	rc.CreateFiled("order_id", mysql.TypeLong)
@@ -320,6 +324,8 @@ func NewRecordSets() *MyRecordSets {
 	rc.CreateFiled("sqlsha1", mysql.TypeString)
 	// 备份用时
 	rc.CreateFiled("backup_time", mysql.TypeString)
+	// 判断该语句是否是需要被合并的(只有 alter table, create index, drop index三种语句需要被合并)，不需要为0，已经被合并过的SQL会被设置为-1，需要的数字为对应的合并后的SQL的行号
+	rc.CreateFiled("needMerge", mysql.TypeTiny)
 
 	t.rc = rc
 	return t
@@ -392,6 +398,8 @@ func (s *MyRecordSets) setFields(r *Record) {
 	} else {
 		row[11].SetString(r.BackupCostTime)
 	}
+
+	row[12].SetValue(r.NeedMerge)
 
 	s.rc.data[s.rc.count] = row
 	s.rc.count++

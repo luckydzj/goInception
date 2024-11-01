@@ -21,7 +21,6 @@ import (
 	"fmt"
 	// "strconv"
 
-	"github.com/hanchuanchuan/goInception/config"
 	"github.com/hanchuanchuan/goInception/mysql"
 	"github.com/hanchuanchuan/goInception/terror"
 )
@@ -90,7 +89,9 @@ const (
 	ER_MULTIPLE_PRI_KEY
 	ER_DUP_KEYNAME
 	ER_TOO_LONG_INDEX_COMMENT
+	ER_CANT_ADD_PK_OR_UK_COLUMN
 	ER_DUP_INDEX
+	ER_INDEX_COLUMN_REPEAT
 	ER_TEMP_TABLE_TMP_PREFIX
 	ER_TABLE_PREFIX
 	ER_TABLE_CHARSET_MUST_UTF8
@@ -104,6 +105,7 @@ const (
 	ER_COLUMN_EXISTED
 	ER_COLUMN_NOT_EXISTED
 	ER_CANT_DROP_FIELD_OR_KEY
+	ER_CANT_DROP_INDEX_COLUMN
 	ER_INVALID_DEFAULT
 	ER_USERNAME
 	ER_HOSTNAME
@@ -128,6 +130,8 @@ const (
 	ER_END_WITH_COMMIT
 	ER_DB_NOT_EXISTED_ERROR
 	ER_TABLE_EXISTS_ERROR
+	ER_TABLE_GROUP_EXISTS_ERROR
+	ER_TABLE_GROUP_NOT_EXISTED_ERROR
 	ER_INDEX_NAME_IDX_PREFIX
 	ER_INDEX_NAME_UNIQ_PREFIX
 	ER_AUTOINC_UNSIGNED
@@ -160,6 +164,7 @@ const (
 	ER_NOT_SUPPORTED_ALTER_OPTION
 	ER_CONFLICTING_DECLARATIONS
 	ER_IDENT_USE_KEYWORD
+	ER_IDENT_USE_CUSTOM_KEYWORD
 	ER_VIEW_SELECT_CLAUSE
 	ER_OSC_KILL_FAILED
 	ER_NET_PACKETS_OUT_OF_ORDER
@@ -170,6 +175,7 @@ const (
 	ER_PK_TOO_MANY_PARTS
 	ER_REMOVED_SPACES
 	ER_CHANGE_COLUMN_TYPE
+	ER_CANT_CHANGE_COLUMN_TYPE
 	ER_CANT_DROP_TABLE
 	ER_CANT_DROP_DATABASE
 	ER_WRONG_TABLE_NAME
@@ -216,8 +222,11 @@ const (
 	ErrSameNamePartition
 	ErrRepeatConstDefinition
 	ErrPartitionNotExisted
+	ErrIndexNotExisted
 	ErrMaxVarcharLength
+	ErrMaxColumnCount
 	ER_ERROR_LAST
+	ER_TOOL_BASED_UNIQUE_INDEX_WARNING
 )
 
 var ErrorsDefault = map[ErrorCode]string{
@@ -251,7 +260,7 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_ID_IS_UPER:                          "Identifier is not allowed to been upper-case.",
 	ErrUnknownCharset:                      "Unknown charset: '%s'.",
 	ER_UNKNOWN_COLLATION:                   "Unknown collation: '%s'.",
-	ER_INVALID_DATA_TYPE:                   "Not supported data type on field: '%s'.",
+	ER_INVALID_DATA_TYPE:                   "Not supported data type on field: '%s'(%s).",
 	ER_NOT_ALLOWED_NULLABLE:                "Column '%s' in table '%s' is not allowed to been nullable.",
 	ER_DUP_FIELDNAME:                       "Duplicate column name '%s'.",
 	ER_WRONG_COLUMN_NAME:                   "Incorrect column name '%s'.",
@@ -272,7 +281,9 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_MULTIPLE_PRI_KEY:                    "Multiple primary key defined.",
 	ER_DUP_KEYNAME:                         "Duplicate key name '%s'.",
 	ER_TOO_LONG_INDEX_COMMENT:              "Comment for index '%s' is too long (max = %lu).",
+	ER_CANT_ADD_PK_OR_UK_COLUMN:            "Can't add PK or UK column '%s'.",
 	ER_DUP_INDEX:                           "Duplicate index '%s' defined on the table '%s.%s'.",
+	ER_INDEX_COLUMN_REPEAT:                 "Column repeat index '%s' defined on the table '%s.%s' column('%s').",
 	ER_TEMP_TABLE_TMP_PREFIX:               "Set 'tmp' prefix for temporary table.",
 	ER_TABLE_PREFIX:                        "Need set '%s' prefix for table.",
 	ER_TABLE_CHARSET_MUST_UTF8:             "Set charset to one of '%s' for table '%s'.",
@@ -287,6 +298,7 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_COLUMN_EXISTED:                      "Column '%s' have existed.",
 	ER_COLUMN_NOT_EXISTED:                  "Column '%s' not existed.",
 	ER_CANT_DROP_FIELD_OR_KEY:              "Can't DROP '%s'; check that column/key exists.",
+	ER_CANT_DROP_INDEX_COLUMN:              "Can't DROP index column '%s'.",
 	ER_INVALID_DEFAULT:                     "Invalid default value for column '%s'.",
 	ER_USERNAME:                            "user name",
 	ER_HOSTNAME:                            "host name",
@@ -311,8 +323,10 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_END_WITH_COMMIT:                     "Must end with commit.",
 	ER_DB_NOT_EXISTED_ERROR:                "Selected Database '%s' not existed.",
 	ER_TABLE_EXISTS_ERROR:                  "Table '%s' already exists.",
-	ER_INDEX_NAME_IDX_PREFIX:               "Index '%s' in table '%s' need '%s' prefix.",
-	ER_INDEX_NAME_UNIQ_PREFIX:              "Index '%s' in table '%s' need 'uniq_' prefix.",
+	ER_TABLE_GROUP_EXISTS_ERROR:            "Table group '%s' already exists.",
+	ER_TABLE_GROUP_NOT_EXISTED_ERROR:       "Table group '%s' not existed.",
+	ER_INDEX_NAME_IDX_PREFIX:               "Index '%s' need '%s' prefix (table '%s').",
+	ER_INDEX_NAME_UNIQ_PREFIX:              "Unique index '%s' need '%s' prefix (table '%s').",
 	ER_AUTOINC_UNSIGNED:                    "Set unsigned attribute on auto increment column in table '%s'.",
 	ER_VARCHAR_TO_TEXT_LEN:                 "Set column '%s' to TEXT type.",
 	ER_CHAR_TO_VARCHAR_LEN:                 "Set column '%s' to VARCHAR type.",
@@ -333,7 +347,7 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_INDEX_USE_ALTER_TABLE:               "Create/drop index and rename is not allowed, please replace with alter statement.",
 	ER_WITH_DEFAULT_ADD_COLUMN:             "Set Default value for column '%s' in table '%s'",
 	ER_TRUNCATED_WRONG_VALUE:               "Truncated incorrect %s value: '%s'",
-	ER_TEXT_NOT_NULLABLE_ERROR:             "TEXT/BLOB Column '%s' in table '%s' can't  been not null.",
+	ER_TEXT_NOT_NULLABLE_ERROR:             "TEXT/BLOB/JSON Column '%s' in table '%s' can't been not null.",
 	ER_WRONG_VALUE_FOR_VAR:                 "Variable '%s' can't be set to the value of '%s'",
 	ER_TOO_MUCH_AUTO_TIMESTAMP_COLS:        "Incorrect table definition; there can be only one TIMESTAMP column with CURRENT_TIMESTAMP in DEFAULT or ON UPDATE clause",
 	ER_INVALID_ON_UPDATE:                   "Invalid ON UPDATE clause for '%s' column",
@@ -343,6 +357,7 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_NOT_SUPPORTED_ALTER_OPTION:          "Not supported statement of alter option",
 	ER_CONFLICTING_DECLARATIONS:            "Conflicting declarations: '%s%s' and '%s%s'",
 	ER_IDENT_USE_KEYWORD:                   "Identifier '%s' is keyword in MySQL.",
+	ER_IDENT_USE_CUSTOM_KEYWORD:            "Identifier '%s' is custom keyword.",
 	ER_VIEW_SELECT_CLAUSE:                  "View's SELECT contains a '%s' clause",
 	ER_OSC_KILL_FAILED:                     "Can not find OSC executing task",
 	ER_NET_PACKETS_OUT_OF_ORDER:            "Got packets out of order",
@@ -353,6 +368,7 @@ var ErrorsDefault = map[ErrorCode]string{
 	ER_PK_TOO_MANY_PARTS:                   "Too many primary key part in table '%s'.'%s', max parts: %d",
 	ER_REMOVED_SPACES:                      "Leading spaces are removed from name '%s'",
 	ER_CHANGE_COLUMN_TYPE:                  "Type conversion warning for column '%s' %s -> %s.",
+	ER_CANT_CHANGE_COLUMN_TYPE:             "Cannot change column type '%s' %s -> %s.",
 	ER_CANT_DROP_TABLE:                     "Drop/truncate '%s' is not allowed, please replace with alter rename statement.",
 	ER_CANT_DROP_DATABASE:                  "Command is forbidden! Cannot drop database '%s'.",
 	ER_WRONG_TABLE_NAME:                    "Incorrect table name '%-.100s'",
@@ -381,27 +397,30 @@ var ErrorsDefault = map[ErrorCode]string{
 	ErCantChangeColumn:                     "Not supported statement of change column('%s').",
 	// ErrMixOfGroupFuncAndFields:             "Mixing of GROUP columns (MIN(),MAX(),COUNT(),...) with no GROUP columns is illegal if there is no GROUP BY clause",
 	//ER_NULL_NAME_FOR_INDEX:                 "Index name cannot be null in table '%s'.",
-	ER_DATETIME_DEFAULT:            "Set default value for DATETIME column '%s'.",
-	ER_TOO_MUCH_AUTO_DATETIME_COLS: "Incorrect table definition; there can be only one DATETIME column with CURRENT_TIMESTAMP in DEFAULT or ON UPDATE clause",
-	ErrFloatDoubleToDecimal:        "Set column '%s' to DECIMAL type.",
-	ErrIdentifierUpper:             "Identifier '%s' must be capitalized.",
-	ErrIdentifierLower:             "Identifier '%s' must be lowercase.",
-	ErrWrongAndExpr:                "May be the wrong syntax! Separate multiple fields with commas.",
-	ErrCannotAddForeign:            "Cannot add foreign key constraint",
-	ErrWrongFkDefWithMatch:         "Incorrect foreign key definition for '%-.192s': Key reference and table reference don't match",
-	ErrFkDupName:                   "Duplicate foreign key constraint name '%s'",
-	ErrJoinNoOnCondition:           "set the on clause for join statement.",
-	ErrImplicitTypeConversion:      "Implicit type conversion is not allowed(column '%s.%s',type '%s').",
-	ErrUseValueExpr:                "Please confirm if you want to use value expression in where condition.",
-	ErrUseIndexVisibility:          "The back-end database does not support the index to specify the visible option.",
-	ErrViewSupport:                 "Not allowed to create or use views '%s'.",
-	ErrViewColumnCount:             "View's SELECT and view's field list have different column counts",
-	ErrIncorrectDateTimeValue:      "Incorrect datetime value: '%v'(column '%s')",
-	ErrSameNamePartition:           "Duplicate partition name %-.192s",
-	ErrRepeatConstDefinition:       "Duplicate partition constant definition: '%v'",
-	ErrPartitionNotExisted:         "Partition '%-.64s' does not exist",
-	ErrMaxVarcharLength:            "Column length too big for column '%s' (Custom maximum is %d)",
-	ER_ERROR_LAST:                  "TheLastError,ByeBye",
+	ER_DATETIME_DEFAULT:                "Set default value for DATETIME column '%s'.",
+	ER_TOO_MUCH_AUTO_DATETIME_COLS:     "Incorrect table definition; there can be only one DATETIME column with CURRENT_TIMESTAMP in DEFAULT or ON UPDATE clause",
+	ErrFloatDoubleToDecimal:            "Set column '%s' to DECIMAL type.",
+	ErrIdentifierUpper:                 "Identifier '%s' must be capitalized.",
+	ErrIdentifierLower:                 "Identifier '%s' must be lowercase.",
+	ErrWrongAndExpr:                    "May be the wrong syntax! Separate multiple fields with commas.",
+	ErrCannotAddForeign:                "Cannot add foreign key constraint",
+	ErrWrongFkDefWithMatch:             "Incorrect foreign key definition for '%-.192s': Key reference and table reference don't match",
+	ErrFkDupName:                       "Duplicate foreign key constraint name '%s'",
+	ErrJoinNoOnCondition:               "set the on clause for join statement.",
+	ErrImplicitTypeConversion:          "Implicit type conversion is not allowed(column '%s.%s',type '%s').",
+	ErrUseValueExpr:                    "Please confirm if you want to use value expression in where condition.",
+	ErrUseIndexVisibility:              "The back-end database does not support the index to specify the visible option.",
+	ErrViewSupport:                     "Not allowed to create or use views '%s'.",
+	ErrViewColumnCount:                 "View's SELECT and view's field list have different column counts",
+	ErrIncorrectDateTimeValue:          "Incorrect datetime value: '%v'(column '%s')",
+	ErrSameNamePartition:               "Duplicate partition name %-.192s",
+	ErrRepeatConstDefinition:           "Duplicate partition constant definition: '%v'",
+	ErrPartitionNotExisted:             "Partition '%-.64s' does not exist",
+	ErrIndexNotExisted:                 "Index '%-.64s' does not exist",
+	ErrMaxVarcharLength:                "Column length too big for column '%s' (Custom maximum is %d)",
+	ErrMaxColumnCount:                  "Table '%s' has too many columns(limit %d,current %d)",
+	ER_ERROR_LAST:                      "TheLastError,ByeBye",
+	ER_TOOL_BASED_UNIQUE_INDEX_WARNING: "Existing unique indexes may cause duplicate data loss when executing statements using schema-altering tools. It is recommended to review and assess potential risks.",
 }
 
 var ErrorsChinese = map[ErrorCode]string{
@@ -434,7 +453,7 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_ID_IS_UPER:                       "标识符不允许大写.",
 	ErrUnknownCharset:                   "未知的字符集: '%s'.",
 	ER_UNKNOWN_COLLATION:                "未知的排序规则: '%s'.",
-	ER_INVALID_DATA_TYPE:                "列 '%s' 数据类型不支持.",
+	ER_INVALID_DATA_TYPE:                "列 '%s' 数据类型(%s)不支持.",
 	ER_NOT_ALLOWED_NULLABLE:             "列 '%s' 不允许为null(表 '%s').",
 	ER_DUP_FIELDNAME:                    "重复的列名: '%s'.",
 	ER_WRONG_COLUMN_NAME:                "不正确的列名: '%s'.",
@@ -455,7 +474,9 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_MULTIPLE_PRI_KEY:                    "定义了多个主键.",
 	ER_DUP_KEYNAME:                         "索引名 '%s' 重复.",
 	ER_TOO_LONG_INDEX_COMMENT:              "索引 '%s' 注释过长(max = %lu).",
+	ER_CANT_ADD_PK_OR_UK_COLUMN:            "禁止添加主键或唯一键列 '%s",
 	ER_DUP_INDEX:                           "索引 '%s' 定义重复(表'%s.%s').",
+	ER_INDEX_COLUMN_REPEAT:                 "索引 '%s' 的字段与索引 '%s.%s' 存在重复字段('%s').",
 	ER_TEMP_TABLE_TMP_PREFIX:               "临时表需要指定'tmp'前缀",
 	ER_TABLE_PREFIX:                        "表名需要指定'%s'前缀",
 	ER_TABLE_CHARSET_MUST_UTF8:             "允许的字符集为: '%s'(表'%s').",
@@ -470,6 +491,7 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_COLUMN_EXISTED:                      "列 '%s' 已存在.",
 	ER_COLUMN_NOT_EXISTED:                  "列 '%s' 不存在.",
 	ER_CANT_DROP_FIELD_OR_KEY:              "无法删除 '%s'; 请检查字段/键是否存在.",
+	ER_CANT_DROP_INDEX_COLUMN:              "无法删除索引列 '%s'.",
 	ER_INVALID_DEFAULT:                     "列 '%s' 默认值无效.",
 	ER_USERNAME:                            "user name",
 	ER_HOSTNAME:                            "host name",
@@ -494,6 +516,8 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_END_WITH_COMMIT:                     "Must end with commit.",
 	ER_DB_NOT_EXISTED_ERROR:                "选择的数据库 '%s' 不存在.",
 	ER_TABLE_EXISTS_ERROR:                  "表 '%s' 已存在.",
+	ER_TABLE_GROUP_EXISTS_ERROR:            "表组 '%s' 已存在.",
+	ER_TABLE_GROUP_NOT_EXISTED_ERROR:       "表组 '%s' 不存在.",
 	ER_INDEX_NAME_IDX_PREFIX:               "索引 '%s' 需要指定'%s'前缀(表'%s').",
 	ER_INDEX_NAME_UNIQ_PREFIX:              "唯一索引 '%s' 需要指定'%s'前缀(表'%s').",
 	ER_AUTOINC_UNSIGNED:                    "自增列建议设置无符号标志unsigned(表'%s').",
@@ -516,7 +540,7 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_INDEX_USE_ALTER_TABLE:               "暂不支持create/drop index和rename语法,请使用alter语句替换.",
 	ER_WITH_DEFAULT_ADD_COLUMN:             "列 '%s' 请设置默认值(表'%s')",
 	ER_TRUNCATED_WRONG_VALUE:               "Truncated incorrect %s value: '%s'",
-	ER_TEXT_NOT_NULLABLE_ERROR:             "TEXT/BLOB 列 '%s' 禁止设置为not null(表'%s').",
+	ER_TEXT_NOT_NULLABLE_ERROR:             "TEXT/BLOB/JSON 列 '%s' 禁止设置为not null(表'%s').",
 	ER_WRONG_VALUE_FOR_VAR:                 "Variable '%s' can't be set to the value of '%s'",
 	ER_TOO_MUCH_AUTO_TIMESTAMP_COLS:        "表定义不正确,只能有一个TIMESTAMP字段在DEFAULT或ON UPDATE指定CURRENT_TIMESTAMP.",
 	ER_INVALID_ON_UPDATE:                   "列 %s' ON UPDATE 设置无效",
@@ -526,6 +550,7 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_NOT_SUPPORTED_ALTER_OPTION:          "Not supported statement of alter option",
 	ER_CONFLICTING_DECLARATIONS:            "Conflicting declarations: '%s%s' and '%s%s'",
 	ER_IDENT_USE_KEYWORD:                   "标识符 '%s' 是MySQL关键字.",
+	ER_IDENT_USE_CUSTOM_KEYWORD:            "标识符 '%s' 是自定义关键字.",
 	ER_VIEW_SELECT_CLAUSE:                  "View's SELECT contains a '%s' clause",
 	ER_OSC_KILL_FAILED:                     "Can not find OSC executing task",
 	ER_NET_PACKETS_OUT_OF_ORDER:            "Got packets out of order",
@@ -536,6 +561,7 @@ var ErrorsChinese = map[ErrorCode]string{
 	ER_PK_TOO_MANY_PARTS:                   "表 '%s'.'%s' 主键指定了太多的字段, 最多允许 %d 个字段",
 	ER_REMOVED_SPACES:                      "Leading spaces are removed from name '%s'",
 	ER_CHANGE_COLUMN_TYPE:                  "类型转换警告: 列 '%s' %s -> %s.",
+	ER_CANT_CHANGE_COLUMN_TYPE:             "禁止改变列的类型 '%s' %s -> %s.",
 	ER_CANT_DROP_TABLE:                     "禁用【DROP】|【TRUNCATE】删除/清空表 '%s', 请改用RENAME重写.",
 	ER_CANT_DROP_DATABASE:                  "命令禁止! 无法删除数据库'%s'.",
 	ER_WRONG_TABLE_NAME:                    "不正确的表名: '%-.100s'",
@@ -569,14 +595,17 @@ var ErrorsChinese = map[ErrorCode]string{
 	ErrJoinNoOnCondition:                   "join语句请指定on子句.",
 	ErrImplicitTypeConversion:              "不允许隐式类型转换(列'%s.%s',类型'%s').",
 	ErrUseValueExpr:                        "请确认是否要在where条件中使用值表达式.",
-	ErrUseIndexVisibility:                  "后端数据库暂不支持索引指定visible选项",
+	ErrUseIndexVisibility:                  "后端数据库不支持索引的visible选项",
 	ErrViewSupport:                         "不允许创建或使用视图 '%s'.",
 	ErrViewColumnCount:                     "视图的SELECT和视图字段列表具有不同的列数",
 	ErrIncorrectDateTimeValue:              "不正确的时间:'%v'(列 '%s')",
 	ErrSameNamePartition:                   "分区名重复: %-.192s",
 	ErrRepeatConstDefinition:               "重复的分区范围定义: '%v'",
 	ErrPartitionNotExisted:                 "分区 '%-.64s' 不存在",
+	ErrIndexNotExisted:                     "Index '%-.64s' 不存在",
 	ErrMaxVarcharLength:                    "列'%s'指定长度过长(自定义上限为%d)",
+	ErrMaxColumnCount:                      "表'%s'列数过多(上限:%d,当前:%d)",
+	ER_TOOL_BASED_UNIQUE_INDEX_WARNING:     "存在唯一索引，使用改表工具执行语句可能导致重复数据丢失，建议复查是否存在风险",
 }
 
 func GetErrorLevel(code ErrorCode) uint8 {
@@ -594,6 +623,7 @@ func GetErrorLevel(code ErrorCode) uint8 {
 		ER_CHARSET_ON_COLUMN,
 		ER_COLUMN_HAVE_NO_COMMENT,
 		ER_IDENT_USE_KEYWORD,
+		ER_IDENT_USE_CUSTOM_KEYWORD,
 		ER_INC_INIT_ERR,
 		ER_INDEX_NAME_IDX_PREFIX,
 		ER_INDEX_NAME_UNIQ_PREFIX,
@@ -641,7 +671,9 @@ func GetErrorLevel(code ErrorCode) uint8 {
 		ErrWrongAndExpr,
 		ErrImplicitTypeConversion,
 		ErrUseValueExpr,
-		ER_WITH_INSERT_FIELD:
+		ErrMaxColumnCount,
+		ER_WITH_INSERT_FIELD,
+		ER_TOOL_BASED_UNIQUE_INDEX_WARNING:
 		return 1
 
 	case ER_CONFLICTING_DECLARATIONS,
@@ -658,6 +690,7 @@ func GetErrorLevel(code ErrorCode) uint8 {
 		ER_INVALID_DEFAULT,
 		ER_NOT_SUPPORTED_KEY_TYPE,
 		ER_DUP_INDEX,
+		ER_INDEX_COLUMN_REPEAT,
 		ER_TOO_LONG_KEY,
 		ER_MULTIPLE_PRI_KEY,
 		ER_DUP_KEYNAME,
@@ -723,6 +756,7 @@ func GetErrorMessage(code ErrorCode, lang string) string {
 // SQLError records an error information, from executing SQL.
 type SQLError struct {
 	Code    ErrorCode
+	Level   uint8
 	Message string
 }
 
@@ -735,6 +769,12 @@ func (e *SQLError) Error() string {
 func NewErr(errCode ErrorCode, args ...interface{}) *SQLError {
 	e := &SQLError{Code: errCode}
 	e.Message = fmt.Sprintf(GetErrorMessage(errCode, "en_us"), args...)
+	return e
+}
+
+// custom error level. used for inc_level function
+func (e *SQLError) SetLevel(l uint8) *SQLError {
+	e.Level = l
 	return e
 }
 
@@ -851,6 +891,8 @@ func (e ErrorCode) String() string {
 		return "er_too_long_index_comment"
 	case ER_DUP_INDEX:
 		return "er_dup_index"
+	case ER_INDEX_COLUMN_REPEAT:
+		return "er_index_column_repeat"
 	case ER_TEMP_TABLE_TMP_PREFIX:
 		return "er_temp_table_tmp_prefix"
 	case ER_TABLE_PREFIX:
@@ -925,6 +967,10 @@ func (e ErrorCode) String() string {
 		return "er_db_not_existed_error"
 	case ER_TABLE_EXISTS_ERROR:
 		return "er_table_exists_error"
+	case ER_TABLE_GROUP_EXISTS_ERROR:
+		return "er_table_group_exists_error"
+	case ER_TABLE_GROUP_NOT_EXISTED_ERROR:
+		return "er_table_group_not_existed_error"
 	case ER_INDEX_NAME_IDX_PREFIX:
 		return "er_index_name_idx_prefix"
 	case ER_INDEX_NAME_UNIQ_PREFIX:
@@ -987,7 +1033,7 @@ func (e ErrorCode) String() string {
 		return "er_not_supported_alter_option"
 	case ER_CONFLICTING_DECLARATIONS:
 		return "er_conflicting_declarations"
-	case ER_IDENT_USE_KEYWORD:
+	case ER_IDENT_USE_KEYWORD, ER_IDENT_USE_CUSTOM_KEYWORD:
 		return "er_ident_use_keyword"
 	case ER_VIEW_SELECT_CLAUSE:
 		return "er_view_select_clause"
@@ -1089,224 +1135,17 @@ func (e ErrorCode) String() string {
 		return "er_repeat_const_definition"
 	case ErrPartitionNotExisted:
 		return "er_partition_not_existed"
+	case ErrIndexNotExisted:
+		return "er_index_not_existed"
 	case ErrMaxVarcharLength:
 		return "er_max_varchar_length"
+	case ErrMaxColumnCount:
+		return "er_max_column_count"
 	case ER_ERROR_LAST:
 		return "er_error_last"
+	case ER_TOOL_BASED_UNIQUE_INDEX_WARNING:
+		return "er_tool_based_unique_index_warning"
+
 	}
 	return ""
-}
-
-// TestCheckAuditSetting 自动校准旧的审核规则和自定义规则
-func TestCheckAuditSetting(cnf *config.Config) {
-
-	if cnf.Inc.CheckInsertField {
-		cnf.IncLevel.ER_WITH_INSERT_FIELD = int8(GetErrorLevel(ER_WITH_INSERT_FIELD))
-	} else {
-		cnf.IncLevel.ER_WITH_INSERT_FIELD = 0
-	}
-
-	if cnf.Inc.CheckDMLWhere {
-		cnf.IncLevel.ER_NO_WHERE_CONDITION = int8(GetErrorLevel(ER_NO_WHERE_CONDITION))
-		cnf.IncLevel.ErrJoinNoOnCondition = int8(GetErrorLevel(ErrJoinNoOnCondition))
-	} else {
-		cnf.IncLevel.ER_NO_WHERE_CONDITION = 0
-		cnf.IncLevel.ErrJoinNoOnCondition = 0
-	}
-
-	if cnf.Inc.CheckDMLLimit {
-		cnf.IncLevel.ER_WITH_LIMIT_CONDITION = int8(GetErrorLevel(ER_WITH_LIMIT_CONDITION))
-	} else {
-		cnf.IncLevel.ER_WITH_LIMIT_CONDITION = 0
-	}
-
-	if cnf.Inc.CheckDMLOrderBy {
-		cnf.IncLevel.ER_WITH_ORDERBY_CONDITION = int8(GetErrorLevel(ER_WITH_ORDERBY_CONDITION))
-	} else {
-		cnf.IncLevel.ER_WITH_ORDERBY_CONDITION = 0
-	}
-
-	if !cnf.Inc.EnableSelectStar {
-		cnf.IncLevel.ER_SELECT_ONLY_STAR = int8(GetErrorLevel(ER_SELECT_ONLY_STAR))
-	} else {
-		cnf.IncLevel.ER_SELECT_ONLY_STAR = 0
-	}
-
-	if !cnf.Inc.EnableOrderByRand {
-		cnf.IncLevel.ER_ORDERY_BY_RAND = int8(GetErrorLevel(ER_ORDERY_BY_RAND))
-	} else {
-		cnf.IncLevel.ER_ORDERY_BY_RAND = 0
-	}
-
-	if !cnf.Inc.EnableNullable {
-		cnf.IncLevel.ER_NOT_ALLOWED_NULLABLE = int8(GetErrorLevel(ER_NOT_ALLOWED_NULLABLE))
-	} else {
-		cnf.IncLevel.ER_NOT_ALLOWED_NULLABLE = 0
-	}
-
-	if !cnf.Inc.EnableForeignKey {
-		cnf.IncLevel.ER_FOREIGN_KEY = int8(GetErrorLevel(ER_FOREIGN_KEY))
-	} else {
-		cnf.IncLevel.ER_FOREIGN_KEY = 0
-	}
-
-	if !cnf.Inc.EnableBlobType {
-		cnf.IncLevel.ER_USE_TEXT_OR_BLOB = int8(GetErrorLevel(ER_USE_TEXT_OR_BLOB))
-	} else {
-		cnf.IncLevel.ER_USE_TEXT_OR_BLOB = 0
-	}
-
-	if !cnf.Inc.EnableJsonType {
-		cnf.IncLevel.ErJsonTypeSupport = int8(GetErrorLevel(ErrJsonTypeSupport))
-	} else {
-		cnf.IncLevel.ErJsonTypeSupport = 0
-	}
-
-	if !cnf.Inc.EnableUseView {
-		cnf.IncLevel.ErrViewSupport = int8(GetErrorLevel(ErrViewSupport))
-	} else {
-		cnf.IncLevel.ErrViewSupport = 0
-	}
-
-	if cnf.Inc.EnablePKColumnsOnlyInt {
-		cnf.IncLevel.ER_PK_COLS_NOT_INT = int8(GetErrorLevel(ER_PK_COLS_NOT_INT))
-	} else {
-		cnf.IncLevel.ER_PK_COLS_NOT_INT = 0
-	}
-
-	if cnf.Inc.CheckTableComment {
-		cnf.IncLevel.ER_TABLE_MUST_HAVE_COMMENT = int8(GetErrorLevel(ER_TABLE_MUST_HAVE_COMMENT))
-	} else {
-		cnf.IncLevel.ER_TABLE_MUST_HAVE_COMMENT = 0
-	}
-
-	if cnf.Inc.CheckColumnComment {
-		cnf.IncLevel.ER_COLUMN_HAVE_NO_COMMENT = int8(GetErrorLevel(ER_COLUMN_HAVE_NO_COMMENT))
-	} else {
-		cnf.IncLevel.ER_COLUMN_HAVE_NO_COMMENT = 0
-	}
-
-	if cnf.Inc.CheckPrimaryKey {
-		cnf.IncLevel.ER_TABLE_MUST_HAVE_PK = int8(GetErrorLevel(ER_TABLE_MUST_HAVE_PK))
-	} else {
-		cnf.IncLevel.ER_TABLE_MUST_HAVE_PK = 0
-	}
-
-	if !cnf.Inc.EnablePartitionTable {
-		cnf.IncLevel.ER_PARTITION_NOT_ALLOWED = int8(GetErrorLevel(ER_PARTITION_NOT_ALLOWED))
-	} else {
-		cnf.IncLevel.ER_PARTITION_NOT_ALLOWED = 0
-	}
-
-	if !cnf.Inc.EnableEnumSetBit {
-		cnf.IncLevel.ER_USE_ENUM = int8(GetErrorLevel(ER_USE_ENUM))
-		cnf.IncLevel.ER_INVALID_DATA_TYPE = int8(GetErrorLevel(ER_INVALID_DATA_TYPE))
-	} else {
-		cnf.IncLevel.ER_USE_ENUM = 0
-		cnf.IncLevel.ER_INVALID_DATA_TYPE = 0
-	}
-
-	if cnf.Inc.CheckIndexPrefix {
-		cnf.IncLevel.ER_INDEX_NAME_IDX_PREFIX = int8(GetErrorLevel(ER_INDEX_NAME_IDX_PREFIX))
-		cnf.IncLevel.ER_INDEX_NAME_UNIQ_PREFIX = int8(GetErrorLevel(ER_INDEX_NAME_UNIQ_PREFIX))
-	} else {
-		cnf.IncLevel.ER_INDEX_NAME_IDX_PREFIX = 0
-		cnf.IncLevel.ER_INDEX_NAME_UNIQ_PREFIX = 0
-	}
-
-	if cnf.Inc.EnableAutoIncrementUnsigned {
-		cnf.IncLevel.ER_AUTOINC_UNSIGNED = int8(GetErrorLevel(ER_AUTOINC_UNSIGNED))
-	} else {
-		cnf.IncLevel.ER_AUTOINC_UNSIGNED = 0
-	}
-
-	if cnf.Inc.CheckAutoIncrementInitValue {
-		cnf.IncLevel.ER_INC_INIT_ERR = int8(GetErrorLevel(ER_INC_INIT_ERR))
-	} else {
-		cnf.IncLevel.ER_INC_INIT_ERR = 0
-	}
-
-	if cnf.Inc.CheckIdentifier {
-		cnf.IncLevel.ER_INVALID_IDENT = int8(GetErrorLevel(ER_INVALID_IDENT))
-	} else {
-		cnf.IncLevel.ER_INVALID_IDENT = 0
-	}
-
-	if cnf.Inc.CheckAutoIncrementDataType {
-		cnf.IncLevel.ER_SET_DATA_TYPE_INT_BIGINT = int8(GetErrorLevel(ER_SET_DATA_TYPE_INT_BIGINT))
-	} else {
-		cnf.IncLevel.ER_SET_DATA_TYPE_INT_BIGINT = 0
-	}
-
-	if cnf.Inc.CheckTimestampDefault {
-		cnf.IncLevel.ER_TIMESTAMP_DEFAULT = int8(GetErrorLevel(ER_TIMESTAMP_DEFAULT))
-	} else {
-		cnf.IncLevel.ER_TIMESTAMP_DEFAULT = 0
-	}
-
-	if cnf.Inc.CheckTimestampCount {
-		cnf.IncLevel.ER_TOO_MUCH_AUTO_TIMESTAMP_COLS = int8(GetErrorLevel(ER_TOO_MUCH_AUTO_TIMESTAMP_COLS))
-	} else {
-		cnf.IncLevel.ER_TOO_MUCH_AUTO_TIMESTAMP_COLS = 0
-	}
-
-	if !cnf.Inc.EnableColumnCharset {
-		cnf.IncLevel.ER_CHARSET_ON_COLUMN = int8(GetErrorLevel(ER_CHARSET_ON_COLUMN))
-	} else {
-		cnf.IncLevel.ER_CHARSET_ON_COLUMN = 0
-	}
-
-	if !cnf.Inc.EnableIdentiferKeyword {
-		cnf.IncLevel.ER_IDENT_USE_KEYWORD = int8(GetErrorLevel(ER_IDENT_USE_KEYWORD))
-	} else {
-		cnf.IncLevel.ER_IDENT_USE_KEYWORD = 0
-	}
-
-	if cnf.Inc.CheckAutoIncrementName {
-		cnf.IncLevel.ER_AUTO_INCR_ID_WARNING = int8(GetErrorLevel(ER_AUTO_INCR_ID_WARNING))
-	} else {
-		cnf.IncLevel.ER_AUTO_INCR_ID_WARNING = 0
-	}
-
-	if cnf.Inc.MergeAlterTable {
-		cnf.IncLevel.ER_ALTER_TABLE_ONCE = int8(GetErrorLevel(ER_ALTER_TABLE_ONCE))
-	} else {
-		cnf.IncLevel.ER_ALTER_TABLE_ONCE = 0
-	}
-
-	if cnf.Inc.CheckColumnDefaultValue {
-		cnf.IncLevel.ER_WITH_DEFAULT_ADD_COLUMN = int8(GetErrorLevel(ER_WITH_DEFAULT_ADD_COLUMN))
-	} else {
-		cnf.IncLevel.ER_WITH_DEFAULT_ADD_COLUMN = 0
-	}
-
-	if cnf.Inc.CheckColumnTypeChange {
-		cnf.IncLevel.ER_CHANGE_COLUMN_TYPE = int8(GetErrorLevel(ER_CHANGE_COLUMN_TYPE))
-	} else {
-		cnf.IncLevel.ER_CHANGE_COLUMN_TYPE = 0
-	}
-
-	if cnf.Inc.CheckColumnPositionChange {
-		cnf.IncLevel.ErCantChangeColumnPosition = int8(GetErrorLevel(ErCantChangeColumnPosition))
-	} else {
-		cnf.IncLevel.ErCantChangeColumnPosition = 0
-	}
-
-	if cnf.Inc.EnableChangeColumn {
-		cnf.IncLevel.ErCantChangeColumn = 0
-	} else {
-		cnf.IncLevel.ErCantChangeColumn = int8(GetErrorLevel(ErCantChangeColumn))
-	}
-
-	if !cnf.Inc.EnableBlobNotNull {
-		cnf.IncLevel.ER_TEXT_NOT_NULLABLE_ERROR = int8(GetErrorLevel(ER_TEXT_NOT_NULLABLE_ERROR))
-	} else {
-		cnf.IncLevel.ER_TEXT_NOT_NULLABLE_ERROR = 0
-	}
-
-	if cnf.Inc.CheckImplicitTypeConversion {
-		cnf.IncLevel.ErrImplicitTypeConversion = int8(GetErrorLevel(ErrImplicitTypeConversion))
-	} else {
-		cnf.IncLevel.ErrImplicitTypeConversion = 0
-	}
 }

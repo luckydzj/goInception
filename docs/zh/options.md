@@ -25,6 +25,7 @@ inception set check_dml_limit = true;
 
 参数  |  默认值  |  可选范围 | 说明
 ------------ | ------------- | ------------ | ------------
+alter_auto_merge   |  false    |   true,false     |   当同一个表出现多条alter table/create index/drop index语句时，goInception会将这些SQL合并成一条，并将合并后的SQL连同原始SQL的校验结果一起返回
 check_autoincrement_datatype   |  false    |   true,false     |   当建表时自增列的类型不为int或者bigint时报错
 check_autoincrement_init_value   |  false    |   true,false     |     当建表时自增列的值指定的不为1，则报错
 check_autoincrement_name   |  false    |   true,false     |   建表时，如果指定的自增列的名字不为ID，则报错，说明是有意义的，给提示
@@ -48,20 +49,21 @@ check_timestamp_count `v0.6.0`   |  false    |   true,false     |    配置是�
 check_timestamp_default   |  false    |   true,false     |    建表时，如果没有为timestamp类型指定默认值，则报错
 columns_must_have_index `v1.2.2`   | ""    |   string  | 指定的列必须添加索引。多个列时以逗号分隔(`格式: 列名 [列类型,可选]`),指定列类型时对类型也会限制.
 default_charset `v1.0.5` | "utf8mb4"    |   string  | 设置连接数据库的默认字符集,默认值为`utf8mb4` (解决低版本不支持utf8mb4的问题)
+disable_types `v1.2.6` | ""    |   string  | 禁用数据库类型,多个时以逗号分隔(合并参数 enable_blob_type,enable_json_type,enable_enum_set_bit,enable_timestamp_type)
 enable_autoincrement_unsigned   |  false    |   true,false     |  自增列是不是要为无符号型
 enable_any_statement `v1.2.5`  |  false    |   true,false     |  是否允许所有语法(仍受其他开关影响,如删表等).[详细说明见PR](https://github.com/hanchuanchuan/goInception/pull/301)
 enable_blob_not_null `v1.0` |  false    |   true,false     |   是否允许blob/text/json类型置为`not null`,默认为`false`,即不允许
-enable_blob_type   |  false    |   true,false     |   检查是不是支持BLOB字段，包括建表、修改列、新增列操作
+enable_blob_type  `已弃用` |  false    |   true,false     |   检查是不是支持BLOB字段，包括建表、修改列、新增列操作 (使用参数`disable_types`代替)
 enable_change_column `v1.0.3` |  true    |   true,false     |   设置是否支持change column语法,默认值`true`
 enable_column_charset   |  false    |   true,false     |  允许列自己设置字符集
 enable_drop_database |  false    |   true,false     |  是否允许删除数据库
 enable_drop_table   |  false    |   true,false     |  是否允许删除表
-enable_enum_set_bit   |  false    |   true,false     |    是不是支持enum,set,bit数据类型
+enable_enum_set_bit  `已弃用` |  false    |   true,false     |    是不是支持enum,set,bit数据类型 (使用参数`disable_types`代替)
 enable_fingerprint `v0.6.2`   |  false    |   true,false     |    sql指纹功能。dml语句相似时，可以根据相同的指纹ID复用explain结果，以减少远端数据库explain操作，并提高审核速度
 explain_rule `v1.1.1`   |  "first"    |   "first", "max"     |    explain判断受影响行数时使用的规则(`"first", "max"`)。  `"first"`: 使用第一行的explain结果作为受影响行数, `"max"`: 		使用explain结果中的最大值作为受影响行数
 enable_foreign_key   |  false    |   true,false     |     是不是支持外键
 enable_identifer_keyword   |  false    |   true,false     |   检查在SQL语句中，是不是有标识符被写成MySQL的关键字，默认值为报警。
-enable_json_type  `v0.7.2` |  false    |   true,false     |   设置是否允许json类型字段，包括建表、修改列、新增列操作
+enable_json_type  `v0.7.2` `已弃用` |  false    |   true,false     |   设置是否允许json类型字段，包括建表、修改列、新增列操作 (使用参数`disable_types`代替)
 enable_minimal_rollback `v1.1.2` |  false    |   true,false     |   设置是否启用最小化回滚SQL，当开启时，update的回滚语句仅记录最小化变更(未变更列不再记录), 默认为`false`
 <s>enable_not_innodb  `v1.0-rc4 已删除`</s>  |  false    |   true,false     |   `已删除!` 请使用 `enable_set_engine`和 `support_engine`以便于更灵活的指定存储引擎。 <s> *建表指定的存储引擎不为Innodb，不报错* </s>
 enable_nullable   |  true    |   true,false     |    创建或者新增列时是否允许列为NULL
@@ -74,7 +76,7 @@ enable_set_charset   |  false    |   true,false     |     是否允许指定表�
 enable_set_collation `v0.7` |  false    |   true,false     |     是否允许指定表和数据库的排序规则
 enable_set_engine  `v1.0-rc4`  |  true    |   true,false     |     是否允许指定存储引擎,默认为`true`
 enable_sql_statistic `v0.9` |  false    |   true,false     |     开启统计功能. 详见 **[统计功能](statistics.html)**
-enable_timestamp_type `v1.0.1` |  true    |   true,false     |    设置是否允许 `timestamp` 类型字段，包括建表、修改列、新增列操作，默认为 `true`
+enable_timestamp_type `v1.0.1` `已弃用` |  true    |   true,false     |    设置是否允许 `timestamp` 类型字段，包括建表、修改列、新增列操作，默认为 `true` (使用参数`disable_types`代替)
 enable_use_view `v1.2.4` | false    |   true,false  | 支持创建和使用视图
 enable_zero_date `v1.0.1` |  true    |   true,false     |    设置是否支持时间为0值，关闭时强制报错。默认值为 `true`，即开启，此时会基于数据库sql_mode的NO_ZERO_DATE判断是否支持
 general_log `v0.8.1` |  false    |   true,false     |     是否记录全量日志
